@@ -246,6 +246,36 @@ if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
 
+
+
+# Warmup
+X, Y = get_batch('train')
+for _ in range(20):
+    logits, loss = model(X, Y)
+
+torch.cuda.synchronize()
+
+# Benchmark
+start = torch.cuda.Event(enable_timing=True)
+end = torch.cuda.Event(enable_timing=True)
+
+start.record()
+
+for _ in range(100):
+    logits, loss = model(X, Y)
+
+end.record()
+
+torch.cuda.synchronize()
+
+elapsed = start.elapsed_time(end)
+
+print(f"100 iterations: {elapsed:.3f} ms")
+print(f"per iteration: {elapsed / 100:.3f} ms")
+
+breakpoint()
+
+
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
