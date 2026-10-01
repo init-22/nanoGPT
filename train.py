@@ -247,34 +247,49 @@ if wandb_log and master_process:
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
 
 
+# ---------------------------------------------------------
+# CUDA PROFILING: one CausalSelfAttention forward
+# ---------------------------------------------------------
+
+model.eval()
+
+X, Y = get_batch('train')
 
 # Warmup
-X, Y = get_batch('train')
-for _ in range(20):
-    logits, loss = model(X, Y)
+with torch.no_grad():
+    for _ in range(20):
+        logits, loss = model(X, Y)
 
 torch.cuda.synchronize()
 
-# Benchmark
-start = torch.cuda.Event(enable_timing=True)
-end = torch.cuda.Event(enable_timing=True)
+print("\nStarting profiler...")
 
-start.record()
+with torch.profiler.profile(
+    activities=[
+        torch.profiler.ProfilerActivity.CPU,
+        torch.profiler.ProfilerActivity.CUDA,
+    ],
+    record_shapes=True,
+    profile_memory=False,
+    with_stack=False,
+) as prof:
 
-for _ in range(100):
-    logits, loss = model(X, Y)
+    with torch.no_grad():
+        logits, loss = model(X, Y)
 
-end.record()
+    torch.cuda.synchronize()
 
-torch.cuda.synchronize()
+print("\n===== CUDA PROFILE =====")
+print(
+    prof.key_averages().table(
+        sort_by="self_cuda_time_total",
+        row_limit=50
+    )
+)
+print("========================\n")
 
-elapsed = start.elapsed_time(end)
-
-print(f"100 iterations: {elapsed:.3f} ms")
-print(f"per iteration: {elapsed / 100:.3f} ms")
 
 breakpoint()
-
 
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
